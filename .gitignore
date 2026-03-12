@@ -1,0 +1,15 @@
+node_modules
+dist
+.DS_Store
+src-tauri/target
+target
+*.bak
+*.tmp
+.gemini
+.agent
+.agents
+.cursor
+bin/
+temp/
+out/
+build/

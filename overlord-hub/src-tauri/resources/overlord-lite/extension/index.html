@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Overlord Lite</title>
+    <style>
+        body {
+            background-color: #323232;
+            color: #ccc;
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            text-align: center;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover { background-color: #45a049; }
+        #status { font-size: 12px; color: #aaa; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h2>Overlord Lite</h2>
+    <p>Select layers and hit send!</p>
+
+    <!-- UI as requested -->
+    <button id="send">Send to After Effects</button>
+
+    <div id="status"></div>
+
+    <script src="CSInterface.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>

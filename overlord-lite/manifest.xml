@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExtensionManifest Version="7.0" ExtensionBundleId="com.overlordlite.panel" ExtensionBundleVersion="1.0.0"
+    ExtensionBundleName="Overlord Lite" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <ExtensionList>
+        <Extension Id="com.overlordlite.panel" Version="1.0.0" />
+    </ExtensionList>
+    <ExecutionEnvironment>
+        <HostList>
+            <Host Name="PHXS" Version="15.0" />
+            <Host Name="PHSP" Version="15.0" />
+            <Host Name="ILST" Version="18.0" />
+            <Host Name="AEFT" Version="14.0" />
+        </HostList>
+        <LocaleList>
+            <Locale Code="All" />
+        </LocaleList>
+        <RequiredRuntimeList>
+            <RequiredRuntime Name="CSXS" Version="7.0" />
+        </RequiredRuntimeList>
+    </ExecutionEnvironment>
+    <DispatchInfoList>
+        <Extension Id="com.overlordlite.panel">
+            <DispatchInfo>
+                <Resources>
+                    <MainPath>./extension/index.html</MainPath>
+                    <!-- Instead of hardcoding to one JSX, the index.html/main.js will evaluate the proper script based on the Host App -->
+                    <ScriptPath>./host/photoshop.jsx</ScriptPath> 
+                </Resources>
+                <Lifecycle>
+                    <AutoVisible>true</AutoVisible>
+                </Lifecycle>
+                <UI>
+                    <Type>Panel</Type>
+                    <Menu>Overlord Lite</Menu>
+                    <Geometry>
+                        <Size>
+                            <Height>300</Height>
+                            <Width>300</Width>
+                        </Size>
+                        <MinSize>
+                            <Height>200</Height>
+                            <Width>200</Width>
+                        </MinSize>
+                    </Geometry>
+                </UI>
+            </DispatchInfo>
+        </Extension>
+    </DispatchInfoList>
+</ExtensionManifest>
