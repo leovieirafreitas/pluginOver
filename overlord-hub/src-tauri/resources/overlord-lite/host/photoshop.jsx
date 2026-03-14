@@ -36,11 +36,8 @@ function exportLayers(aeScriptPath) {
 
         try { BridgeTalk.launch("aftereffects"); } catch(ignore) {}
 
-        // Cria uma cópia inteira do documento mantendo as camadas para o After Effects
-        // Em versões completas do Overlord usamos ActionManager para isolar as layers.
         var tempDoc = doc.duplicate("Export_Overlord_" + new Date().getTime(), false);
         
-        // Salva documento como .psd num diretório temporário //
         var psdFile = new File(Folder.myDocuments.fsName + "/Export_Overlord_" + new Date().getTime() + ".psd");
         
         var saveOpts = new PhotoshopSaveOptions();
@@ -51,10 +48,8 @@ function exportLayers(aeScriptPath) {
         tempDoc.saveAs(psdFile, saveOpts, true, Extension.LOWERCASE);
         tempDoc.close(SaveOptions.DONOTSAVECHANGES);
         
-        // Retorna ao doc original
         app.activeDocument = doc;
 
-        // Avisa o AE onde está o arquivo
         var payload = {
             type: "file",
             appName: "photoshop",
