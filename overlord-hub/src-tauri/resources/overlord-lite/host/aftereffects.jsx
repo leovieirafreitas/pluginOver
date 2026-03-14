@@ -103,7 +103,6 @@ function receiveFromOverlordLite(uriEncodedPayload) {
                 try { layer.property("Anchor Point").setValue([50, 50]); } catch(e){}
                 layer.property("Position").setValue([item.x, item.y]);
                 layer.label = item.isClippingMask ? 5 : 0;
-                if (layer.guideLayer !== undefined) layer.guideLayer = true;
                 nulls[item.id] = layer;
             } 
             else if (item.type === "text") {
@@ -205,7 +204,6 @@ function receiveFromOverlordLite(uriEncodedPayload) {
             if (layer && item.isMask) {
                 activeMasks[item.parentId || "root"] = layer;
                 layer.enabled = false;
-                if (layer.guideLayer !== undefined) layer.guideLayer = true;
                 layer.label = 5; 
             }
 
@@ -335,21 +333,21 @@ function executePrecompNulls() {
     if (!comp || !(comp instanceof CompItem)) return;
     var sel = comp.selectedLayers;
     if (sel.length === 0) return;
-    app.beginUndoGroup("Pré-compor Pastas (Nulos)");
+    app.beginUndoGroup("Precomp Selection");
     try {
-        for (var s = 0; s < sel.length; s++) {
-            var nuloMaster = sel[s];
-            var filhos = [];
-            for (var i = 1; i <= comp.numLayers; i++) {
-                if (comp.layer(i).parent === nuloMaster) filhos.push(comp.layer(i));
-            }
-            if (filhos.length === 0) continue;
-            var idxs = [nuloMaster.index];
-            for (var i = 0; i < filhos.length; i++) idxs.push(filhos[i].index);
-            var novaComp = comp.layers.precompose(idxs, nuloMaster.name, true);
-            var lComp = comp.layer(novaComp.name); 
-            if (lComp) lComp.collapseTransformation = true;
+        var idxs = [];
+        for (var i = 0; i < sel.length; i++) idxs.push(sel[i].index);
+        
+        var baseName = sel[0].name;
+        for (var i = 0; i < sel.length; i++) {
+           if (sel[i].name && sel[i].name.toLowerCase().indexOf("null") === -1 && sel[i].name !== "Grupo") {
+               baseName = sel[i].name; 
+               break;
+           }
         }
+        var novaComp = comp.layers.precompose(idxs, baseName + " Comp", true);
+        var lComp = comp.layer(novaComp.name); 
+        if (lComp) lComp.collapseTransformation = true;
     } catch(err) {} finally { app.endUndoGroup(); }
 }
 

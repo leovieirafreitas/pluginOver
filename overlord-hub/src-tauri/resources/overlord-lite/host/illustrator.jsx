@@ -85,7 +85,7 @@ function safeGetFill(col) {
     return { type: "solid", color: [0.5, 0.5, 0.5] };
 }
 
-function exportLayers(aeScriptPath, mode) {
+function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
     try {
         if (!app.documents || app.documents.length === 0) return '{"error":"Abra um documento!"}';
         var doc = app.activeDocument;
@@ -341,8 +341,7 @@ function exportLayers(aeScriptPath, mode) {
             var originalRect = doc.artboards[abIdx].artboardRect;
             doc.artboards[abIdx].artboardRect = b;
             
-            var qStr = prompt("Qualidade da Rasterização (Multiplicador, ex: 1, 2, 4, 7):", "2");
-            var q = parseFloat(qStr) || 2;
+            var q = parseFloat(pngQualityMultiplier) || 2;
             var res = 72 * q;
 
             var exportOptions = new ExportOptionsPNG24();

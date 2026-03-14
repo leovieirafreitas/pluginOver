@@ -16,7 +16,7 @@ function loadHostScript(fileName) {
 if (appName === "Illustrator") loadHostScript("illustrator.jsx");
 else if (appName === "AfterEffects") loadHostScript("aftereffects.jsx");
 
-function executeExport(mode) {
+function executeExport(mode, quality) {
     var statusDiv = document.getElementById("status");
     statusDiv.innerHTML = "Processing...";
     
@@ -25,7 +25,8 @@ function executeExport(mode) {
     var aeScriptPath = extensionPath + "/host/aftereffects.jsx";
     
     // Chamamos a função no host (Illustrator ou Photoshop)
-    var scriptCall = 'exportLayers("' + aeScriptPath.replace(/\\/g, "/") + '", "' + mode + '")';
+    var qStr = quality ? '"' + quality + '"' : 'null';
+    var scriptCall = 'exportLayers("' + aeScriptPath.replace(/\\/g, "/") + '", "' + mode + '", ' + qStr + ')';
     
     cs.evalScript(scriptCall, function(result) {
         try {
@@ -83,7 +84,9 @@ var btnRaster = document.getElementById("rasterizeBtn");
 if (btnRaster) {
     btnRaster.onclick = function() {
         if (appName === "AfterEffects") return;
-        executeExport("rasterize");
+        var qSelect = document.getElementById("pngQuality");
+        var qVal = qSelect ? qSelect.value : "2";
+        executeExport("rasterize", qVal);
     };
 }
 

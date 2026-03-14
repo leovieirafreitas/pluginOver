@@ -141,15 +141,23 @@
     <div class="section">
         <div class="section-label">Push to AE</div>
         <div class="btn-group">
-            <button id="pushIndividual">⚡ Vector</button>
-            <button id="pushMerged">🧩 Merged</button>
+            <button id="pushIndividual">⚡ Split Layer</button>
+            <button id="pushMerged">🧩 Layer Group</button>
         </div>
-        <button id="rasterizeBtn">📸 Rasterize PNG</button>
+        <div style="display: flex; gap: 8px;">
+            <button id="rasterizeBtn" style="flex: 1;">📸 Rasterize PNG</button>
+            <select id="pngQuality" style="background: var(--glass); border: 1px solid var(--glass-border); color: white; border-radius: 8px; padding: 0 8px; outline: none; cursor: pointer;">
+                <option value="1">1x</option>
+                <option value="2" selected>2x</option>
+                <option value="4">4x</option>
+                <option value="7">7x</option>
+            </select>
+        </div>
     </div>
 
     <div class="section">
         <div class="section-label">Structure</div>
-        <button id="precompNullBtn">📁 Precomp Nulls</button>
+        <button id="precompNullBtn">📁 Precomp Selection</button>
     </div>
 
     <div class="section">
