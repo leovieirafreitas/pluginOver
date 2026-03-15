@@ -15,12 +15,14 @@ function applyFillOrStroke(shapeGroup, data, isStroke) {
             }
         }
         
-        var aeColors = [];
         var numStops = data.stops.length;
+        // AE format: [numColorStops, pos, r, g, b, ..., numAlphaStops, pos, alpha, ...]
+        var aeColors = [numStops];
         for (var i = 0; i < numStops; i++) {
             var s = data.stops[i];
             aeColors.push(s.offset, s.color[0], s.color[1], s.color[2]);
         }
+        aeColors.push(numStops);
         for (var i = 0; i < numStops; i++) {
             var s = data.stops[i];
             aeColors.push(s.offset, s.opacity !== undefined ? s.opacity : 1.0);
