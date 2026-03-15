@@ -86,6 +86,7 @@ function safeGetFill(col) {
 }
 
 function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
+    var progressWin = null, pb = null, isCancelled = false;
     try {
         if (!app.documents || app.documents.length === 0) return '{"error":"Abra um documento!"}';
         var doc = app.activeDocument;
@@ -94,7 +95,16 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
         var abWidth = Math.abs(abRect[2] - abRect[0]);
         var abHeight = Math.abs(abRect[1] - abRect[3]);
         
+        function closeProg() {
+            if (progressWin) {
+                try { progressWin.hide(); } catch(e){}
+                try { progressWin.close(); } catch(e){}
+                progressWin = null;
+            }
+        }
+
         function sendToAe(payloadData) {
+            closeProg();
             try { BridgeTalk.launch("aftereffects"); } catch(e){}
             var payloadStr = stringify(payloadData);
             var bt = new BridgeTalk();
@@ -118,6 +128,33 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
             return '{"error":"Selecione algo!"}';
         }
 
+        function createProg(msg) {
+            if (!progressWin) {
+                progressWin = new Window("palette", "Overlord Lite");
+                progressWin.margins = 16;
+                progressWin.spacing = 10;
+                progressWin.alignChildren = ["left","top"];
+                progressWin.add("statictext", undefined, msg || "Getting a whole lot of pixels...");
+                pb = progressWin.add("progressbar", undefined, 0, sel.length || 1);
+                pb.preferredSize.width = 300;
+                var btnGroup = progressWin.add("group");
+                btnGroup.alignment = "right";
+                var cancelBtn = btnGroup.add("button", undefined, "Cancel");
+                cancelBtn.onClick = function() {
+                    isCancelled = true;
+                };
+                progressWin.show();
+                progressWin.update();
+            }
+        }
+        function updateProg(v) {
+            if (progressWin) { try { progressWin.update(); } catch(e){} }
+            if (isCancelled) { closeProg(); throw new Error("Cancelado pelo usuário."); }
+            if (pb && v !== undefined) pb.value = v;
+        }
+
+        if (mode !== "rasterize") createProg();
+
         if (mode === "comp_selection") {
             var sel = doc.selection;
             if (!sel || sel.length === 0) return '{"error":"Selecione algo!"}';
@@ -133,6 +170,7 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
             // Re-use logic to extract layers
             var extracted = [];
             for (var i = 0; i < sel.length; i++) {
+                updateProg(i + 1);
                 var res = extractItem(sel[i], null);
                 if (res) {
                     if (res instanceof Array) { for(var j=0; j<res.length; j++) extracted.push(res[j]); }
@@ -155,6 +193,7 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
         var allExtracted = [];
 
         function extractItem(item, parentId) {
+            updateProg();
             if (!item) return null;
             var data = { name: "" };
             try { data.name = item.name || item.typename.replace("Item", ""); } catch(e){}
@@ -191,6 +230,8 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
                 if (tn === "GroupItem") {
                     if (isMerged) {
                         var mGroup = { type: "merged_group", name: item.name || "Grupo", items: [] };
+                        try { mGroup.opacity = item.opacity; } catch(e){}
+                        try { mGroup.blendingMode = item.blendingMode.toString().replace("BlendModes.", ""); } catch(e){}
                         for (var i = 0; i < item.pageItems.length; i++) {
                             var res = extractItem(item.pageItems[i], null);
                             if (res) {
@@ -317,6 +358,7 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
         
         if (mode === "push_selection") {
             for (var i = 0; i < sel.length; i++) {
+                updateProg(i + 1);
                 var itm = sel[i];
                 var extractRes = extractItem(itm, null);
                 if (!extractRes) continue;
@@ -370,6 +412,7 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
         }
 
         for (var i = 0; i < sel.length; i++) {
+            updateProg(i + 1);
             var resArr = extractItem(sel[i], null);
             if (resArr) {
                 if (resArr instanceof Array) { for(var j=0; j<resArr.length; j++) allExtracted.push(resArr[j]); }
@@ -384,8 +427,12 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
             var saveFile = File.saveDialog("Salvar Imagem Rasterizada", "PNG:*.png");
             if (!saveFile) return '{"error":"Cancelado pelo usuário."}';
             
+            createProg("Rasterizing pixels...");
+            if (pb) pb.maxvalue = sel.length || 1;
+            
             var b = [0,0,0,0];
             for(var s=0; s<sel.length; s++) {
+                updateProg(s + 1);
                 var it = sel[s].geometricBounds;
                 if(s===0) b=it;
                 else { b[0]=Math.min(b[0], it[0]); b[1]=Math.max(b[1], it[1]); b[2]=Math.max(b[2], it[2]); b[3]=Math.min(b[3], it[3]); }
@@ -472,7 +519,12 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
 
         return sendToAe(payload);
     } catch(err) {
-        return '{"error":"Erro AI: ' + err.toString() + '"}';
+        if (typeof closeProg === "function") closeProg();
+        var errMsg = err.toString();
+        if (errMsg.indexOf("Cancelado") !== -1) {
+            return '{"error":"Cancelado pelo usuário."}';
+        }
+        return '{"error":"Erro AI: ' + errMsg + '"}';
     }
 }
 
