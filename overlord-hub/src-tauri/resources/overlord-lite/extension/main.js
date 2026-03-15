@@ -59,6 +59,11 @@ document.getElementById("pushMerged").onclick = function() {
     executeExport("merged");
 };
 
+document.getElementById("pushSelection").onclick = function() {
+    if (appName === "AfterEffects") return;
+    executeExport("push_selection");
+};
+
 var btnCompAb = document.getElementById("createCompAb");
 if (btnCompAb) {
     btnCompAb.onclick = function() {

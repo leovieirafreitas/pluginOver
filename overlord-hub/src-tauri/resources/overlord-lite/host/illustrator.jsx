@@ -142,7 +142,7 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
             return sendToAe({ command: "comp_selection", abWidth: w, abHeight: h, name: "Comp Seleção", layers: extracted });
         }
         
-        var isMerged = (mode === "merged");
+        var isMerged = (mode === "merged" || mode === "push_selection");
 
         var abIdx = doc.artboards.getActiveArtboardIndex();
         var abRect = doc.artboards[abIdx].artboardRect;
@@ -313,6 +313,62 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
             return null;
         }
 
+        var payload = { layers: [], abWidth: abWidth, abHeight: abHeight };
+        
+        if (mode === "push_selection") {
+            for (var i = 0; i < sel.length; i++) {
+                var itm = sel[i];
+                var extractRes = extractItem(itm, null);
+                if (!extractRes) continue;
+                var extractedArr = (extractRes instanceof Array) ? extractRes : [extractRes];
+                
+                var b = itm.geometricBounds;
+                var itemCenterX = (b[0] + b[2]) / 2;
+                var itemCenterY = (b[1] + b[3]) / 2;
+                
+                var mShape = {
+                    type: "merged_shape_layer",
+                    name: itm.name || itm.typename.replace("Item", ""),
+                    x: toAeX(itemCenterX),
+                    y: toAeY(itemCenterY),
+                    items: []
+                };
+                
+                function adjustLocal(nodes, parentItems) {
+                    for (var n = 0; n < nodes.length; n++) {
+                        var it = nodes[n];
+                        if (it.type === "text" || it.type === "file") {
+                            payload.layers.push(it);
+                        } else if (it.type === "merged_group") {
+                            var newGrp = { type: "merged_group", name: it.name, items: [] };
+                            if(it.opacity !== undefined) newGrp.opacity = it.opacity;
+                            if(it.blendingMode !== undefined) newGrp.blendingMode = it.blendingMode;
+                            adjustLocal(it.items, newGrp.items);
+                            if (newGrp.items.length > 0) parentItems.push(newGrp);
+                        } else if (it.type === "shape") {
+                            for (var pIdx = 0; pIdx < it.paths.length; pIdx++) {
+                                var path = it.paths[pIdx];
+                                for (var ptIdx = 0; ptIdx < path.pts.length; ptIdx++) {
+                                    path.pts[ptIdx].a[0] += (it.x - mShape.x);
+                                    path.pts[ptIdx].a[1] += (it.y - mShape.y);
+                                }
+                            }
+                            if (it.fill && it.fill.type === "gradient") {
+                                it.fill.cx = itemCenterX; it.fill.cy = itemCenterY;
+                            }
+                            if (it.stroke && it.stroke.type === "gradient") {
+                                it.stroke.cx = itemCenterX; it.stroke.cy = itemCenterY;
+                            }
+                            parentItems.push(it);
+                        }
+                    }
+                }
+                adjustLocal(extractedArr, mShape.items);
+                if (mShape.items.length > 0) payload.layers.push(mShape);
+            }
+            return sendToAe(payload);
+        }
+
         for (var i = 0; i < sel.length; i++) {
             var resArr = extractItem(sel[i], null);
             if (resArr) {
@@ -321,8 +377,6 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
             }
         }
 
-        var payload = { layers: [], abWidth: abWidth, abHeight: abHeight };
-        
         if (mode === "rasterize") {
             var sel = doc.selection;
             if (sel.length === 0) return '{"error":"Selecione algo para rasterizar"}';
@@ -370,7 +424,7 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
             return sendToAe(rasterPayload);
         }
 
-        if (isMerged) {
+        if (mode === "merged") {
             var abCenterX = (abRect[0] + abRect[2]) / 2;
             var abCenterY = (abRect[1] + abRect[3]) / 2;
             var mergedShape = {
