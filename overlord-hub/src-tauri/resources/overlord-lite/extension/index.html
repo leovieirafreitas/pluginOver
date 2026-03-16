@@ -4,179 +4,37 @@
     <meta charset="utf-8">
     <title>Overlord Lite</title>
     <style>
-        :root {
-            --bg-color: #1a1a1c;
-            --panel-bg: rgba(45, 45, 48, 0.7);
-            --accent-primary: #7d5fff;
-            --accent-secondary: #ff4dff;
-            --accent-success: #2ecc71;
-            --accent-warning: #f1c40f;
-            --accent-info: #3498db;
-            --text-color: #f1f2f6;
-            --sub-text: #a4b0be;
-            --glass: rgba(255, 255, 255, 0.05);
-            --glass-border: rgba(255, 255, 255, 0.1);
-        }
-
         body {
-            background-color: var(--bg-color);
-            background-image: radial-gradient(circle at 50% -20%, #2f2f35, #1a1a1c);
-            color: var(--text-color);
-            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
-            margin: 0;
-            padding: 16px;
+            background-color: #323232;
+            color: #ccc;
+            font-family: Arial, sans-serif;
+            margin: 20px;
             display: flex;
             flex-direction: column;
-            gap: 12px;
-            user-select: none;
-            overflow-x: hidden;
-            min-height: 100vh;
-        }
-
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding-bottom: 12px;
-            border-bottom: 1px solid var(--glass-border);
-            margin-bottom: 4px;
-        }
-
-        .header h1 {
-            font-size: 15px;
-            margin: 0;
-            font-weight: 700;
-            background: linear-gradient(to right, var(--accent-primary), var(--accent-secondary));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: -0.2px;
-        }
-
-        .version { font-size: 10px; color: var(--sub-text); font-weight: 500; }
-
-        .section {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            background: var(--glass);
-            padding: 12px;
-            border-radius: 12px;
-            border: 1px solid var(--glass-border);
-            backdrop-filter: blur(8px);
-        }
-
-        .section-label {
-            font-size: 9px;
-            text-transform: uppercase;
-            color: var(--sub-text);
-            font-weight: 800;
-            letter-spacing: 1px;
-            margin-bottom: 4px;
-        }
-
-        .btn-group {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-        }
-
-        button {
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            color: white;
-            padding: 10px 12px;
-            border-radius: 8px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            outline: none;
-        }
-
-        button:hover {
-            background: var(--glass-border);
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-            border-color: rgba(255, 255, 255, 0.3);
-        }
-
-        button:active {
-            transform: translateY(0);
-        }
-
-        /* Specific accents */
-        #pushIndividual { border-left: 3px solid var(--accent-success); }
-        #pushMerged { border-left: 3px solid var(--accent-secondary); }
-        #rasterizeBtn { border-left: 3px solid var(--accent-info); }
-        #createCompAb, #createCompSel { border-left: 3px solid var(--accent-primary); }
-        #pullAe { border-left: 3px solid var(--accent-warning); width: 100%; }
-        #precompNullBtn { border-left: 3px solid #ff4757; width: 100%; }
-
-        .status-bar {
-            margin-top: auto;
-            background: rgba(0, 0, 0, 0.2);
-            padding: 8px 12px;
-            border-radius: 8px;
-            font-size: 11px;
-            color: var(--sub-text);
-            border-top: 1px solid var(--glass-border);
+            gap: 15px;
             text-align: center;
-            font-weight: 500;
         }
-
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 10px; }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover { background-color: #45a049; }
+        #status { font-size: 12px; color: #aaa; margin-top: 10px; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>OVERLORD LITE</h1>
-        <div class="version">v4.6</div>
-    </div>
+    <h2>Overlord Lite</h2>
+    <p>Select layers and hit send!</p>
 
-    <div class="section">
-        <div class="section-label">Push to AE</div>
-        <div class="btn-group" style="margin-bottom: 8px;">
-            <button id="pushIndividual">⚡ Split Layer</button>
-            <button id="pushSelection" style="border-left: 3px solid #ff9f43;">✨ Push Selection</button>
-        </div>
-        <div style="margin-bottom: 8px;">
-            <button id="pushMerged" style="border-left: 3px solid var(--accent-secondary); width: 100%;">🧩 Layer Group</button>
-        </div>
-        <div style="display: flex; gap: 8px;">
-            <button id="rasterizeBtn" style="flex: 1;">📸 Rasterize PNG</button>
-            <select id="pngQuality" style="background: var(--glass); border: 1px solid var(--glass-border); color: white; border-radius: 8px; padding: 0 8px; outline: none; cursor: pointer;">
-                <option value="1">1x</option>
-                <option value="2" selected>2x</option>
-                <option value="4">4x</option>
-                <option value="7">7x</option>
-            </select>
-        </div>
-    </div>
+    <!-- UI as requested -->
+    <button id="send">Send to After Effects</button>
 
-    <div class="section">
-        <div class="section-label">Structure</div>
-        <button id="precompNullBtn">📁 Precomp Selection</button>
-    </div>
-
-    <div class="section">
-        <div class="section-label">Composition</div>
-        <div class="btn-group">
-            <button id="createCompAb">🖼️ Artboard</button>
-            <button id="createCompSel">📦 Selection</button>
-        </div>
-    </div>
-
-    <div class="section">
-        <div class="section-label">Interactions</div>
-        <button id="pullAe">📥 Pull from AE</button>
-    </div>
-
-    <div id="status" class="status-bar">Ready for Action</div>
+    <div id="status"></div>
 
     <script src="CSInterface.js"></script>
     <script src="main.js"></script>

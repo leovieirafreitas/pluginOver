@@ -26,7 +26,7 @@ function stringify(obj) {
     return '""';
 }
 
-function exportLayers(aeScriptPath) {
+function exportLayersPhotoshop(aeScriptPath) {
     try {
         if (!app.documents || app.documents.length === 0) {
             return '{"error": "⚠ Abra um arquivo no Photoshop."}';
