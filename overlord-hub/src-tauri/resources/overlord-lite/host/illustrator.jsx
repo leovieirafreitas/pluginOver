@@ -54,8 +54,32 @@ function safeGetColor(col) {
     return [0.5, 0.5, 0.5];
 }
 
-function safeGetFill(col) {
+function safeGetFill(col, item) {
+    if (!col && !item) return null;
+    
+    // Deep investigation if item is provided
+    if (item && (item.typename === "CompoundPathItem" || item.typename === "GroupItem")) {
+        if (item.typename === "CompoundPathItem" && item.pathItems.length > 0) {
+            col = item.pathItems[0].fillColor;
+        } else if (item.typename === "GroupItem" && item.pageItems.length > 0) {
+            // Tenta achar o primeiro preenchimento de gradiente dentro do grupo
+            function findDeepFill(itm) {
+                if (itm.typename === "PathItem" && itm.filled && itm.fillColor.typename === "GradientColor") return itm.fillColor;
+                if (itm.typename === "CompoundPathItem" && itm.pathItems.length > 0) return itm.pathItems[0].fillColor;
+                if (itm.typename === "GroupItem") {
+                    for (var i=0; i<itm.pageItems.length; i++) {
+                        var res = findDeepFill(itm.pageItems[i]);
+                        if (res) return res;
+                    }
+                }
+                return null;
+            }
+            col = findDeepFill(item) || col;
+        }
+    }
+
     if (!col) return null;
+
     try {
         if (col.typename === "GradientColor") {
             var g = col.gradient;
@@ -269,6 +293,7 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
                 }
 
                 if (tn === "CompoundPathItem" || tn === "PathItem") {
+                    // Solid or Gradient fill — keep as fully editable vector shape
                     data.type = "shape";
                     data.paths = [];
                     var b = item.geometricBounds;
@@ -300,16 +325,12 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
                     }
                     var refItem = pathsToProcess[0];
                     if (refItem.filled) {
-                        data.fill = safeGetFill(refItem.fillColor);
-                        if (data.fill && data.fill.type === "gradient") {
-                             data.fill.cx = cx; data.fill.cy = cy;
-                        }
+                        data.fill = safeGetFill(refItem.fillColor, item);
+                        if (data.fill) { data.fill.cx = cx; data.fill.cy = cy; }
                     }
                     if (refItem.stroked) {
-                        data.stroke = safeGetFill(refItem.strokeColor);
-                        if (data.stroke && data.stroke.type === "gradient") {
-                             data.stroke.cx = cx; data.stroke.cy = cy;
-                        }
+                        data.stroke = safeGetFill(refItem.strokeColor, item);
+                        if (data.stroke) { data.stroke.cx = cx; data.stroke.cy = cy; }
                         data.strokeWidth = refItem.strokeWidth;
                         try {
                             data.strokeCap = (refItem.strokeCap === StrokeCap.ROUND ? 2 : (refItem.strokeCap === StrokeCap.PROJECTING ? 3 : 1));

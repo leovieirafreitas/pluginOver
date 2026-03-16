@@ -16,31 +16,74 @@ function applyFillOrStroke(shapeGroup, data, isStroke) {
         }
         
         var numStops = data.stops.length;
-        // AE format: [numColorStops, pos, r, g, b, ..., numAlphaStops, pos, alpha, ...]
+        // DNA AE 2026: Exatamente 22 elementos para 2 stops
         var aeColors = [numStops];
         for (var i = 0; i < numStops; i++) {
             var s = data.stops[i];
-            aeColors.push(s.offset, s.color[0], s.color[1], s.color[2]);
+            // Usa o midpoint real do Illustrator (ou 0.5 default)
+            var mid = (s.midPoint !== undefined) ? s.midPoint : 0.5;
+            var intp = (s.interp !== undefined) ? s.interp : 1;
+            aeColors.push(s.offset, s.color[0], s.color[1], s.color[2], mid, intp);
         }
         aeColors.push(numStops);
         for (var i = 0; i < numStops; i++) {
             var s = data.stops[i];
-            aeColors.push(s.offset, s.opacity !== undefined ? s.opacity : 1.0);
+            var mid = (s.midPoint !== undefined) ? s.midPoint : 0.5;
+            var intp = (s.interp !== undefined) ? s.interp : 1;
+            aeColors.push(s.offset, (s.opacity !== undefined ? s.opacity : 1.0), mid, intp);
         }
 
-        try { fill.property("Colors").setValue(aeColors); } catch(e) {
-            try { fill.property("ADBE Vector Grad Colors").setValue(aeColors); } catch(e) {}
+        var pCores = fill.property("ADBE Vector Grad Colors") || fill.property("Colors") || fill.property("Cores");
+        if (pCores) {
+            try {
+                // AE 2025/2026 Fix: Direct Property Injection (The "Laser" Method)
+                var colorName = pCores.name; 
+                var dna = aeColors.join(" ") + " ";
+                
+                var clipData = "Adobe After Effects 8.0 Keyframe Data\r\n\r\n" +
+                               "\tUnits Per Second\t30\r\n" +
+                               "\tSource Width\t1\r\n" +
+                               "\tSource Height\t1\r\n" +
+                               "\tSource Pixel Aspect Ratio\t1\r\n" +
+                               "\tComp Pixel Aspect Ratio\t1\r\n\r\n" +
+                               colorName + "\t1\r\n" +
+                               "\t\tFrame\t0\t" + dna + "\r\n\r\n" + 
+                               "End of Keyframe Data";
+
+                var tempFile = new File(Folder.temp.fsName + "/overlord_dna.txt");
+                tempFile.open("w");
+                tempFile.encoding = "UTF-8";
+                tempFile.write(clipData);
+                tempFile.close();
+
+                // Robust PowerShell injection with retry/wait logic
+                var psCmd = 'powershell -NoProfile -Command "Get-Content -Raw \'' + tempFile.fsName.replace(/'/g, "''") + '\' | Set-Clipboard"';
+                system.callSystem(psCmd);
+                
+                $.sleep(250); // Aumentado para dar tempo ao Windows/AE
+
+                // MIRAR E ATIRAR: Seleciona e Cola
+                pCores.selected = true;
+                app.executeCommand(20); // PASTE
+                pCores.selected = false;
+                
+            } catch(e) {
+                // Fallback para versoes antigas
+                try { pCores.setValue(aeColors); } catch(e2) {}
+            }
         }
 
         if (data.absOrigin && data.cx !== undefined) {
              var startX = data.absOrigin[0] - data.cx;
              var startY = (data.cy - data.absOrigin[1]);
-             try { fill.property("Start Point").setValue([startX, startY]); } catch(e) {}
+             var pStart = fill.property("ADBE Vector Grad Start Pt") || fill.property("Start Point");
+             if (pStart) pStart.setValue([startX, startY]);
              
              var rad = (data.angle || 0) * (Math.PI / 180);
              var endX = startX + Math.cos(-rad) * data.length;
              var endY = startY + Math.sin(-rad) * data.length;
-             try { fill.property("End Point").setValue([endX, endY]); } catch(e) {}
+             var pEnd = fill.property("ADBE Vector Grad End Pt") || fill.property("End Point");
+             if (pEnd) pEnd.setValue([endX, endY]);
         }
 
         if (isStroke && data.strokeWidth) {
