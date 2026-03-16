@@ -1,0 +1,1 @@
+Error AE: O servidor de automação não pode criar objeto

@@ -1,0 +1,5 @@
+=== FORMATO PADRAO CORES DO GRADIENTE AE ===
+NAO FOI POSSIVEL LER A PROPRIEDADE 'Colors'
+
+Start Point padrao: 0, 0
+End Point padrao: 100, 0
