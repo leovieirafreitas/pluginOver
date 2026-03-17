@@ -54,6 +54,70 @@ function safeGetColor(col) {
     return [0.5, 0.5, 0.5];
 }
 
+function hasGradient(sel) {
+    for (var i = 0; i < sel.length; i++) {
+        var itm = sel[i];
+        if (itm.typename === "PathItem" && itm.filled && itm.fillColor && itm.fillColor.typename === "GradientColor") return true;
+        if (itm.typename === "PathItem" && itm.stroked && itm.strokeColor && itm.strokeColor.typename === "GradientColor") return true;
+        if (itm.typename === "CompoundPathItem") {
+            if (hasGradient(itm.pathItems)) return true;
+        }
+        if (itm.typename === "GroupItem") {
+            if (hasGradient(itm.pageItems)) return true;
+        }
+    }
+    return false;
+}
+
+function exportSelectionAsAi() {
+    var doc = app.activeDocument;
+    var tempFile = new File(Folder.temp.fsName + "/overlord_transfer.ai");
+    app.copy();
+    var tempDoc = app.documents.add(DocumentColorSpace.RGB, doc.width, doc.height);
+    app.paste();
+    var saveOptions = new IllustratorSaveOptions();
+    saveOptions.pdfCompatible = true; 
+    saveOptions.compatibility = Compatibility.ILLUSTRATOR17;
+    try {
+        tempDoc.saveAs(tempFile, saveOptions);
+        tempDoc.close(SaveOptions.DONOTSAVECHANGES);
+        return tempFile.fsName;
+    } catch(e) {
+        tempDoc.close(SaveOptions.DONOTSAVECHANGES);
+        return null;
+    }
+}
+
+function exportItemAsAi(itm) {
+    try {
+        var doc = app.activeDocument;
+        var tempFile = new File(Folder.temp.fsName + "/over_item_" + new Date().getTime() + "_" + Math.floor(Math.random()*1000) + ".ai");
+        
+        var originalSelection = doc.selection;
+        doc.selection = null;
+        itm.selected = true;
+        app.copy();
+        
+        var tempDoc = app.documents.add(DocumentColorSpace.RGB, doc.width, doc.height);
+        app.activeDocument = tempDoc;
+        app.paste();
+        
+        var saveOptions = new IllustratorSaveOptions();
+        saveOptions.pdfCompatible = true; 
+        saveOptions.compatibility = Compatibility.ILLUSTRATOR17;
+        
+        tempDoc.saveAs(tempFile, saveOptions);
+        tempDoc.close(SaveOptions.DONOTSAVECHANGES);
+        
+        app.activeDocument = doc;
+        doc.selection = originalSelection;
+        return tempFile.fsName;
+    } catch(e) { 
+        if (tempDoc) tempDoc.close(SaveOptions.DONOTSAVECHANGES);
+        return null; 
+    }
+}
+
 function safeGetFill(col, item) {
     if (!col && !item) return null;
     
@@ -179,6 +243,52 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
 
         if (mode !== "rasterize") createProg();
 
+        // 🚀 MODO HÍBRIDO v8.0: Separação Inteligente (Shapes vs Gradientes)
+        if (mode === "split_layer" || mode === "normal" || mode === "push_selection") {
+            var withGrad = [];
+            var withoutGrad = [];
+            
+            for (var s = 0; s < sel.length; s++) {
+                if (hasGradient([sel[s]])) withGrad.push(sel[s]);
+                else withoutGrad.push(sel[s]);
+            }
+
+            var payload = { layers: [] };
+            
+            // 1. Processa Gradientes (Turbo .ai Unificado)
+            if (withGrad.length > 0) {
+                // Seleciona apenas os gradientes temporariamente para exportar
+                doc.selection = null;
+                for (var g=0; g<withGrad.length; g++) withGrad[g].selected = true;
+                
+                var aiPath = exportSelectionAsAi();
+                if (aiPath) {
+                    payload.layers.push({
+                        command: "ai_transfer_split", // Força explosão no AE
+                        type: "ai_batch",
+                        filePath: aiPath.replace(/\\/g, "/"),
+                        name: (withGrad[0].name || withGrad[0].layer.name || "Grupo Split")
+                    });
+                }
+                // Restaura seleção completa
+                doc.selection = null;
+                for (var r=0; r<sel.length; r++) sel[r].selected = true;
+            }
+
+            // 2. Processa Shapes Simples (Via Expressa Individual)
+            for (var i = 0; i < withoutGrad.length; i++) {
+                updateProg(i + 1);
+                var res = extractItem(withoutGrad[i], null);
+                if (res) {
+                    if (res instanceof Array) { for(var k=0; k<res.length; k++) payload.layers.push(res[k]); }
+                    else payload.layers.push(res);
+                }
+            }
+            
+            closeProg();
+            return sendToAe(payload);
+        }
+
         if (mode === "comp_selection") {
             var sel = doc.selection;
             if (!sel || sel.length === 0) return '{"error":"Selecione algo!"}';
@@ -195,7 +305,9 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
             var extracted = [];
             for (var i = 0; i < sel.length; i++) {
                 updateProg(i + 1);
-                var res = extractItem(sel[i], null);
+                var itm = sel[i];
+                // [Removida detecção aqui para que extractItem gerencie groups/nulls]
+                var res = extractItem(itm, null);
                 if (res) {
                     if (res instanceof Array) { for(var j=0; j<res.length; j++) extracted.push(res[j]); }
                     else extracted.push(res);
@@ -293,7 +405,9 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
                 }
 
                 if (tn === "CompoundPathItem" || tn === "PathItem") {
-                    // Solid or Gradient fill — keep as fully editable vector shape
+                    // [Modo individual de gradiente removido para forçar o Turbo Mode unificado no topo]
+
+                    // Solid fill — keep as fully editable vector shape
                     data.type = "shape";
                     data.paths = [];
                     var b = item.geometricBounds;
@@ -434,7 +548,9 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
 
         for (var i = 0; i < sel.length; i++) {
             updateProg(i + 1);
-            var resArr = extractItem(sel[i], null);
+            var itm = sel[i];
+            // [Removida detecção aqui para manter hierarquia se mode não for nuclear]
+            var resArr = extractItem(itm, null);
             if (resArr) {
                 if (resArr instanceof Array) { for(var j=0; j<resArr.length; j++) allExtracted.push(resArr[j]); }
                 else { allExtracted.push(resArr); }

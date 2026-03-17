@@ -118,20 +118,124 @@ function receiveFromOverlordLite(uriEncodedPayload) {
 
         var targetComp = app.project.activeItem;
 
+        // 🏗 Criação de Comp
         if (data.command === "comp_artboard" || data.command === "comp_selection") {
             var compName = data.name || "Composição (Overlord)";
             var compW = Math.max(10, Math.round(data.abWidth));
             var compH = Math.max(10, Math.round(data.abHeight));
             targetComp = app.project.items.addComp(compName, compW, compH, 1, 10, 30);
             targetComp.openInViewer();
-            if (!data.layers) {
-                app.endUndoGroup(); return;
-            }
         }
 
         if (!targetComp || !(targetComp instanceof CompItem)) {
             alert("⚠ Abra uma composição no After Effects.");
             app.endUndoGroup(); return;
+        }
+
+        // 🚀 MOTOR DE HIERARQUIA v11.0: Fidelidade Total (True Hierarchy + Order Fix)
+        function buildAiBatch(batchData, comp) {
+            var file = new File(batchData.filePath);
+            if (!file.exists) return null;
+            
+            var io = new ImportOptions(file);
+            var footage = app.project.importFile(io);
+            var aiLayer = comp.layers.add(footage);
+            aiLayer.moveToBeginning();
+            aiLayer.name = batchData.name || "Importando...";
+            
+            for (var i=1; i<=comp.layers.length; i++) comp.layers[i].selected = false;
+            aiLayer.selected = true;
+            $.sleep(200);
+
+            var cmdId = app.findMenuCommandId("Criar formas a partir da camada de vetor") || 3981;
+            app.executeCommand(cmdId);
+            
+            $.sleep(1200); 
+            var newShape = comp.selectedLayers[0];
+            if (newShape === aiLayer) { $.sleep(1000); newShape = comp.selectedLayers[0]; }
+            if (!newShape || !(newShape instanceof ShapeLayer)) return null;
+
+            // 🧬 O Isaltor 2.0: Isolamento cirúrgico por caminho de índice
+            function isolateByIndexPath(layer, idxPath) {
+                var currCont = layer.property("Contents");
+                for (var p = 0; p < idxPath.length; p++) {
+                    var targetIdx = idxPath[p];
+                    for (var d = currCont.numProperties; d >= 1; d--) {
+                        if (d !== targetIdx) currCont.property(d).remove();
+                    }
+                    if (p < idxPath.length - 1) {
+                        try { currCont = currCont.property(1).property("Contents"); } catch(e){ break; }
+                    }
+                }
+            }
+
+            // 🌲 O Walker Fiel: 1 Grupo AI = 1 Nulo AE (Invertido para manter a ordem)
+            function walkAndExplode(propGroup, parentNull, indexPath) {
+                // Percorre de baixo para cima no índice para que o "moveAfter" mantenha a ordem do topo no topo
+                for (var g = propGroup.numProperties; g >= 1; g--) {
+                    var prop = propGroup.property(g);
+                    if (prop.matchName !== "ADBE Vector Group") continue;
+
+                    var subContents = prop.property("Contents");
+                    var subPath = indexPath.concat([g]);
+                    var cleanName = prop.name.replace(/[0-9]+$/, "");
+                    if (cleanName.length < 2) cleanName = prop.name;
+
+                    // 📁 CRIA NULO PARA CADA GRUPO (Controle Total)
+                    var subNull = comp.layers.addNull();
+                    subNull.name = "📁 " + cleanName;
+                    subNull.guideLayer = true; subNull.label = 11; // Laranja
+                    subNull.parent = parentNull;
+                    subNull.property("Position").setValue([0,0]);
+                    subNull.moveAfter(parentNull);
+
+                    // Verifica se tem sub-grupos
+                    var hasSubGroups = false;
+                    for (var s = 1; s <= subContents.numProperties; s++) {
+                        if (subContents.property(s).matchName === "ADBE Vector Group") {
+                            hasSubGroups = true;
+                            break;
+                        }
+                    }
+
+                    if (hasSubGroups) {
+                        // Se tem sub-grupos, continua a árvore
+                        walkAndExplode(subContents, subNull, subPath);
+                    } else {
+                        // ⭐ OBJETO FINAL (Shape parentada ao seu Nulo dedicado)
+                        var sLayer = newShape.duplicate();
+                        sLayer.name = cleanName; 
+                        sLayer.label = 4; // Ciano
+                        sLayer.parent = subNull;
+                        isolateByIndexPath(sLayer, subPath);
+                        sLayer.property("Position").setValue([0,0]);
+                        sLayer.moveAfter(subNull);
+                    }
+                }
+            }
+
+            // Nulo Mestre da Composição
+            var masterName = batchData.name || newShape.name;
+            var masterNull = comp.layers.addNull();
+            masterNull.name = "📁 " + masterName;
+            masterNull.guideLayer = true; masterNull.label = 13; // Amarelo
+            masterNull.property("Position").setValue(newShape.property("Position").value);
+            masterNull.moveBefore(newShape);
+
+            walkAndExplode(newShape.property("Contents"), masterNull, []);
+            
+            newShape.remove();
+            aiLayer.remove();
+            footage.remove();
+            if (file.exists) file.remove();
+            return masterNull;
+        }
+
+        // Se for um comando AI puro à moda antiga (root level)
+        if (data.transferMode === "ai") {
+            buildAiBatch(data, targetComp);
+            app.endUndoGroup();
+            return;
         }
 
         var nulls = {}; 
@@ -142,7 +246,10 @@ function receiveFromOverlordLite(uriEncodedPayload) {
             if (!item) return null;
             var layer;
 
-            if (item.type === "group_parent") {
+            if (item.type === "ai_batch") {
+                layer = buildAiBatch(item, comp);
+            }
+            else if (item.type === "group_parent") {
                 layer = comp.layers.addNull();
                 layer.name = item.name || (item.isClippingMask ? "Clipping Mask" : "Grupo");
                 try { layer.property("Anchor Point").setValue([50, 50]); } catch(e){}
@@ -180,6 +287,41 @@ function receiveFromOverlordLite(uriEncodedPayload) {
                     } catch(e) {}
                 }
             }
+            else if (item.type === "ai_transfer" && item.filePath) {
+                var file = new File(item.filePath);
+                if (file.exists) {
+                    try {
+                        var io = new ImportOptions(file);
+                        var footage = app.project.importFile(io);
+                        var aiLayer = comp.layers.add(footage);
+                        aiLayer.name = item.name || "Vetor Profissional";
+                        aiLayer.property("Position").setValue([item.x, item.y]);
+                        
+                        // 🚦 PAUSA PARA ESTABILIZAR
+                        for (var k=1; k<=comp.layers.length; k++) comp.layers[k].selected = false;
+                        aiLayer.selected = true;
+                        $.sleep(100); 
+
+                        var cmdId = app.findMenuCommandId("Criar formas a partir da camada de vetor") || 3981;
+                        app.executeCommand(cmdId);
+                        
+                        // 🛰 AGUARDANDO CONVERSÃO
+                        $.sleep(400); 
+                        
+                        var newShape = comp.selectedLayers[0];
+                        if (newShape && newShape !== aiLayer) {
+                            aiLayer.remove();
+                            footage.remove();
+                            // SÓ APAGA DO DISCO SE JÁ ESTIVER SEGURO
+                            if (file.exists) { $.sleep(100); file.remove(); } 
+                            layer = newShape;
+                            layer.name = item.name;
+                        } else { 
+                            layer = aiLayer; 
+                        }
+                    } catch(e) {}
+                }
+            }
             else if (item.type === "merged_shape_layer") {
                 layer = comp.layers.addShape();
                 layer.name = item.name || "Logo Mesclado";
@@ -192,6 +334,30 @@ function receiveFromOverlordLite(uriEncodedPayload) {
                             var grp = parentElement.property("Contents").addProperty("ADBE Vector Group");
                             grp.name = it.name || "Grupo";
                             buildMergedContents(grp, it.items);
+                        } else if (it.type === "ai_transfer" && it.filePath) {
+                            // 🚀 COPIA DE AI PARA MERGED: Importa, converte e rouba os conteúdos
+                            var file = new File(it.filePath);
+                            if (file.exists) {
+                                try {
+                                    var io = new ImportOptions(file);
+                                    var footage = app.project.importFile(io);
+                                    var aiLayer = targetComp.layers.add(footage); 
+                                    for (var k=1; k<=targetComp.layers.length; k++) targetComp.layers[k].selected = false;
+                                    aiLayer.selected = true;
+                                    var cmdId = app.findMenuCommandId("Criar formas a partir da camada de vetor") || 3981;
+                                    app.executeCommand(cmdId);
+                                    $.sleep(400); // ⏳ Aguarda o motor do AE
+                                    var newShape = targetComp.selectedLayers[0];
+                                    if (newShape && newShape !== aiLayer) {
+                                        var contents = newShape.property("Contents");
+                                        for (var c=1; c<=contents.numProperties; c++) {
+                                            contents.property(c).copyTo(parentElement.property("Contents"));
+                                        }
+                                        newShape.remove(); aiLayer.remove(); footage.remove();
+                                        if (file.exists) { $.sleep(100); file.remove(); }
+                                    }
+                                } catch(e) {}
+                            }
                         } else if (it.type === "shape") {
                             var grp = parentElement.property("Contents").addProperty("ADBE Vector Group");
                             grp.name = it.name || "Vetor";

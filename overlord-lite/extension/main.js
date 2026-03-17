@@ -51,7 +51,7 @@ document.getElementById("pushIndividual").onclick = function() {
         alert("This feature pushes layers TO After Effects. Use in Illustrator.");
         return;
     }
-    executeExport("normal");
+    executeExport("split_layer");
 };
 
 document.getElementById("pushMerged").onclick = function() {
