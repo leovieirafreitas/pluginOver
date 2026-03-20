@@ -249,50 +249,117 @@ function exportLayers(aeScriptPath, mode, pngQualityMultiplier) {
 
         if (mode !== "rasterize") createProg();
 
-        // 🚀 MODO HÍBRIDO v8.0: Separação Inteligente (Shapes vs Gradientes)
-        if (mode === "split_layer" || mode === "normal" || mode === "push_selection") {
-            var withGrad = [];
-            var withoutGrad = [];
-            
-            for (var s = 0; s < sel.length; s++) {
-                if (hasGradient([sel[s]])) withGrad.push(sel[s]);
-                else withoutGrad.push(sel[s]);
-            }
+        // 🚀 MODO SPLIT LAYER 2.0 (Inteligência NULOS): Separação com Máscaras e Opacidade Herdada
+        if (mode === "split_layer") {
+            var abCenterX = (abRect[0] + abRect[2]) / 2;
+            var abCenterY = (abRect[1] + abRect[3]) / 2;
 
-            var payload = { layers: [] };
-            
-            // 1. Processa Gradientes (Turbo .ai Unificado)
-            if (withGrad.length > 0) {
-                // Seleciona apenas os gradientes temporariamente para exportar
-                doc.selection = null;
-                for (var g=0; g<withGrad.length; g++) withGrad[g].selected = true;
-                
-                var aiPath = exportSelectionAsAi();
-                if (aiPath) {
-                    payload.layers.push({
-                        command: "ai_transfer_split", // Força explosão no AE
-                        type: "ai_batch",
-                        filePath: aiPath.replace(/\\/g, "/"),
-                        name: (withGrad[0].name || withGrad[0].layer.name || "Grupo Split"),
-                        opacity: withGrad[0].opacity,
-                        blendingMode: withGrad[0].blendingMode.toString().replace("BlendModes.", "")
+            function getPathDataXY(pi) {
+                if (!pi.pathPoints || pi.pathPoints.length < 2) return null;
+                var pts = [];
+                for (var p = 0; p < pi.pathPoints.length; p++) {
+                    var pt = pi.pathPoints[p];
+                    pts.push({ 
+                        a: [pt.anchor[0] - abCenterX, abCenterY - pt.anchor[1]], 
+                        i: [pt.leftDirection[0] - pt.anchor[0], pt.anchor[1] - pt.leftDirection[1]], 
+                        o: [pt.rightDirection[0] - pt.anchor[0], pt.anchor[1] - pt.rightDirection[1]] 
                     });
                 }
-                // Restaura seleção completa
-                doc.selection = null;
-                for (var r=0; r<sel.length; r++) sel[r].selected = true;
+                return { pts: pts, closed: pi.closed };
             }
 
-            // 2. Processa Shapes Simples (Via Expressa Individual)
-            for (var i = 0; i < withoutGrad.length; i++) {
+            function buildTreeSplit(item) {
+                if (item.hidden) return null;
+                var isClippingPath = (item.typename === "PathItem" && item.clipping);
+                
+                if (item.typename === "TextFrame") {
+                    try {
+                        var dup = item.duplicate();
+                        var tempOutline = dup.createOutline();
+                        var result = buildTreeSplit(tempOutline);
+                        tempOutline.remove();
+                        return result;
+                    } catch(e) { return null; }
+                }
+
+                if (item.typename === "GroupItem") {
+                    var groupData = { type: "group", name: item.name || "Grupo", items: [] };
+                    if (item.opacity !== undefined) groupData.opacity = item.opacity;
+                    if (item.blendingMode) groupData.blendMode = item.blendingMode.toString();
+                    for (var i = 0; i < item.pageItems.length; i++) {
+                        var childData = buildTreeSplit(item.pageItems[i]);
+                        if (childData) {
+                            if (item.clipped && i === 0) childData.isMask = true;
+                            groupData.items.push(childData);
+                        }
+                    }
+                    if (groupData.items.length > 0) return groupData;
+                    return null;
+                } else {
+                    var paths = [];
+                    var hasFill = item.filled;
+                    var fillColObj = item.fillColor;
+                    var hasStroke = item.stroked;
+                    var strokeColObj = item.strokeColor;
+                    var strokeWidth = item.strokeWidth;
+
+                    if (item.typename === "PathItem") { 
+                        var p = getPathDataXY(item); if (p) paths.push(p); 
+                    } else if (item.typename === "CompoundPathItem") { 
+                        for (var cp = 0; cp < item.pathItems.length; cp++) { 
+                            var childP = item.pathItems[cp];
+                            var p = getPathDataXY(childP); if (p) paths.push(p); 
+                            if (!hasFill && childP.filled) { hasFill = true; fillColObj = childP.fillColor; }
+                            if (!hasStroke && childP.stroked) { hasStroke = true; strokeColObj = childP.strokeColor; strokeWidth = childP.strokeWidth; }
+                        }
+                    }
+                    if (paths.length === 0) return null;
+
+                    var shapeData = { type: "shape", name: item.name || "Vetor", paths: paths };
+                    if (item.opacity !== undefined) shapeData.opacity = item.opacity;
+                    if (item.blendingMode) shapeData.blendMode = item.blendingMode.toString();
+                    if (isClippingPath) shapeData.isMask = true;
+
+                    if (!isClippingPath) {
+                        if (hasFill) {
+                            shapeData.fill = safeGetFill(fillColObj, item);
+                            if (shapeData.fill && shapeData.fill.type === "gradient") {
+                                shapeData.fill.cx = abCenterX; shapeData.fill.cy = abCenterY;
+                            }
+                        }
+                        if (hasStroke) {
+                            shapeData.stroke = safeGetFill(strokeColObj, item);
+                            if (shapeData.stroke && shapeData.stroke.type === "gradient") {
+                                shapeData.stroke.cx = abCenterX; shapeData.stroke.cy = abCenterY;
+                            }
+                            shapeData.strokeWidth = strokeWidth;
+                        }
+                    }
+                    return shapeData;
+                }
+            }
+
+            var splitPayload = { items: [], command: "split_tree" };
+            for (var s = 0; s < sel.length; s++) {
+                var node = buildTreeSplit(sel[s]);
+                if (node) splitPayload.items.push(node);
+            }
+            closeProg();
+            return sendToAe(splitPayload);
+        }
+
+        // Restaura a lógica dos outros botões
+        if (mode === "normal" || mode === "push_selection" || mode === "merged") {
+            // Lógica unificada para os outros botões que não são Split Layer
+            var payload = { layers: [] };
+             for (var i = 0; i < sel.length; i++) {
                 updateProg(i + 1);
-                var res = extractItem(withoutGrad[i], null);
+                var res = extractItem(sel[i], null);
                 if (res) {
                     if (res instanceof Array) { for(var k=0; k<res.length; k++) payload.layers.push(res[k]); }
                     else payload.layers.push(res);
                 }
             }
-            
             closeProg();
             return sendToAe(payload);
         }

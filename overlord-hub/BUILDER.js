@@ -47,15 +47,18 @@ async function build() {
       console.log('   Continuing with existing resources if any...');
     }
 
+    // Use .cmd for Windows compatibility to avoid script execution block
+    const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+
     // 2. Build Frontend (Vite)
     console.log('\x1b[33m%s\x1b[0m', '💻 Building frontend (Vite)...');
-    execSync('npm run build', { stdio: 'inherit', cwd: ROOT });
+    execSync(`${npmCmd} run build`, { stdio: 'inherit', cwd: ROOT });
     console.log('\x1b[32m%s\x1b[0m', '   ✅ Frontend built.');
 
     // 3. Build Tauri App
     console.log('\x1b[33m%s\x1b[0m', '🦀 Building Tauri application...');
-    // We use npx tauri build directly to ensure we're using the CLI correctly
-    execSync('npx tauri build', { stdio: 'inherit', cwd: ROOT });
+    execSync(`${npxCmd} tauri build`, { stdio: 'inherit', cwd: ROOT });
     
     console.log('\x1b[32m%s\x1b[0m', '🎉 Build completed successfully!');
     console.log('\x1b[36m%s\x1b[0m', '📦 You can find the installers in src-tauri/target/release/bundle/');

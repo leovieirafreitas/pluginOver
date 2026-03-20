@@ -132,6 +132,144 @@ function receiveFromOverlordLite(uriEncodedPayload) {
             app.endUndoGroup(); return;
         }
 
+        if (data.command === "split_tree" && data.items) {
+            function getAeBlendMode(modeStr) {
+                if(!modeStr) return BlendingMode.NORMAL;
+                var bm = modeStr.replace("BlendMode.", "").replace("BlendModes.", "");
+                if (bm === "MULTIPLY") return BlendingMode.MULTIPLY;
+                if (bm === "SCREEN") return BlendingMode.SCREEN;
+                if (bm === "OVERLAY") return BlendingMode.OVERLAY;
+                if (bm === "DARKEN") return BlendingMode.DARKEN;
+                if (bm === "LIGHTEN") return BlendingMode.LIGHTEN;
+                if (bm === "COLORDODGE") return BlendingMode.COLOR_DODGE;
+                if (bm === "COLORBURN") return BlendingMode.COLOR_BURN;
+                if (bm === "HARDLIGHT") return BlendingMode.HARD_LIGHT;
+                if (bm === "SOFTLIGHT") return BlendingMode.SOFT_LIGHT;
+                if (bm === "DIFFERENCE") return BlendingMode.DIFFERENCE;
+                if (bm === "EXCLUSION") return BlendingMode.EXCLUSION;
+                if (bm === "HUE") return BlendingMode.HUE;
+                if (bm === "SATURATION") return BlendingMode.SATURATION;
+                if (bm === "COLORBLEND") return BlendingMode.COLOR;
+                if (bm === "LUMINOSITY") return BlendingMode.LUMINOSITY;
+                return BlendingMode.NORMAL;
+            }
+
+            var ccX = targetComp.width / 2;
+            var ccY = targetComp.height / 2;
+
+            function procTreeToLayers(node, comp, inheritedMask, inheritedOpacity) {
+                var currentOpacity = (inheritedOpacity !== undefined) ? inheritedOpacity : 100;
+                
+                if (node.type === "group" || node.type === "merged_group") {
+                    var nullLayer = comp.layers.addShape();
+                    nullLayer.name = node.name || "Grupo";
+                    nullLayer.guideLayer = true; nullLayer.label = 11;
+                    nullLayer.property("Position").setValue([ccX, ccY]); 
+
+                    var combinedOpacity = currentOpacity;
+                    if (node.opacity !== undefined) combinedOpacity = (combinedOpacity * (node.opacity / 100));
+                    
+                    if (node.blendMode) {
+                        try { nullLayer.blendingMode = getAeBlendMode(node.blendMode); } catch(e){}
+                    }
+
+                    var childLayers = [];
+                    var activeMask = null;
+
+                    // BACKWARDS LOOP (N to 0) for Timeline Perfection
+                    for (var i = node.items.length - 1; i >= 0; i--) {
+                        var cL = procTreeToLayers(node.items[i], comp, inheritedMask, combinedOpacity);
+                        if (cL) {
+                            childLayers.push(cL);
+                            if (node.items[i].isMask) {
+                                activeMask = cL;
+                                cL.enabled = false; cL.guideLayer = true; cL.label = 5;
+                            } else if (activeMask) {
+                                try { cL.setTrackMatte(activeMask, TrackMatteType.ALPHA); } catch(e){}
+                            }
+                        }
+                    }
+
+                    if (childLayers.length > 0) {
+                        var minX = 99999, minY = 99999, maxX = -99999, maxY = -99999;
+                        for (var c=0; c<childLayers.length; c++) {
+                            var cPos = childLayers[c].property("Position").value;
+                            minX = Math.min(minX, cPos[0]); minY = Math.min(minY, cPos[1]);
+                            maxX = Math.max(maxX, cPos[0]); maxY = Math.max(maxY, cPos[1]);
+                        }
+                        if (minX !== 99999) {
+                            nullLayer.property("Position").setValue([(minX+maxX)/2, (minY+maxY)/2]);
+                            for (var c=0; c<childLayers.length; c++) childLayers[c].parent = nullLayer;
+                        }
+                    }
+                    return nullLayer;
+
+                } else if (node.type === "shape") {
+                    var shapeLayer = comp.layers.addShape();
+                    shapeLayer.name = node.name || "Vetor";
+                    shapeLayer.label = 4;
+                    shapeLayer.property("Position").setValue([ccX, ccY]);
+                    
+                    var contents = shapeLayer.property("ADBE Root Vectors Group");
+                    var mainGroup = contents.addProperty("ADBE Vector Group");
+                    mainGroup.name = "Conteúdo";
+                    var mainContents = mainGroup.property("ADBE Vectors Group");
+
+                    for (var j = 0; j < node.paths.length; j++) {
+                        var pData = node.paths[j];
+                        var pGrp = mainContents.addProperty("ADBE Vector Shape - Group");
+                        var shp = new Shape();
+                        var v = [], it = [], ot = [];
+                        for (var k=0; k<pData.pts.length; k++) {
+                            v.push(pData.pts[k].a); it.push(pData.pts[k].i); ot.push(pData.pts[k].o);
+                        }
+                        shp.vertices = v; shp.inTangents = it; shp.outTangents = ot; shp.closed = pData.closed;
+                        try { pGrp.property("ADBE Vector Shape").setValue(shp); } catch(e){}
+                    }
+
+                    if (node.stroke) applyFillOrStroke(mainGroup, node.stroke, true);
+                    if (node.fill) applyFillOrStroke(mainGroup, node.fill, false);
+
+                    var finalOp = (currentOpacity * ((node.opacity !== undefined ? node.opacity : 100) / 100));
+                    try { shapeLayer.property("Opacity").setValue(finalOp); } catch(e){}
+                    
+                    if (node.blendMode) {
+                        try { shapeLayer.blendingMode = getAeBlendMode(node.blendMode); } catch(e){}
+                    }
+                    if (inheritedMask) {
+                        try { shapeLayer.setTrackMatte(inheritedMask, TrackMatteType.ALPHA); } catch(e){}
+                    }
+                    return shapeLayer;
+                }
+                return null;
+            }
+
+            var rootLayers = [];
+            for (var i = data.items.length - 1; i >= 0; i--) {
+                var rL = procTreeToLayers(data.items[i], targetComp, null, 100);
+                if (rL) rootLayers.push(rL);
+            }
+
+            var masterNull = targetComp.layers.addShape();
+            masterNull.name = data.name || "MASTER";
+            masterNull.guideLayer = true; masterNull.label = 13;
+            if (rootLayers.length > 0) {
+                var minX = 99999, minY = 99999, maxX = -99999, maxY = -99999;
+                for (var r=0; r<rootLayers.length; r++) {
+                    var rPos = rootLayers[r].property("Position").value;
+                    minX = Math.min(minX, rPos[0]); minY = Math.min(minY, rPos[1]);
+                    maxX = Math.max(maxX, rPos[0]); maxY = Math.max(maxY, rPos[1]);
+                }
+                if (minX !== 99999) {
+                    masterNull.property("Position").setValue([(minX+maxX)/2, (minY+maxY)/2]);
+                    for (var r=0; r<rootLayers.length; r++) rootLayers[r].parent = masterNull;
+                }
+            } else { masterNull.property("Position").setValue([ccX, ccY]); }
+
+            app.endUndoGroup();
+            return;
+        }
+
         if (data.command === "merged" && data.items) {
             var shapeLayer = targetComp.layers.addShape();
             shapeLayer.name = data.name || "Layer Group";
@@ -170,68 +308,6 @@ function receiveFromOverlordLite(uriEncodedPayload) {
                 try { propParent.property(11).setValue(val); return; } catch(e){}
             }
 
-            // 📍 ADICIONA CAIXA DE GUIA VISUAL (BOX DE SELEÇÃO)
-            function addGuideBoxToLayerContents(parentLayer, comp) {
-                if(!(parentLayer instanceof ShapeLayer)) return;
-                var children = [];
-                for (var i = 1; i <= comp.layers.length; i++) {
-                    if (comp.layers[i].parent === parentLayer) children.push(comp.layers[i]);
-                }
-                if (children.length === 0) return;
-                
-                var bounds = null;
-                for (var i = 0; i < children.length; i++) {
-                    var l = children[i];
-                    var r = l.sourceRectAtTime(0, false);
-                    var p = l.property("Position").value;
-                    var s = l.property("Scale").value;
-                    var lLeft = p[0] + r.left * (s[0]/100);
-                    var lTop = p[1] + r.top * (s[1]/100);
-                    var lRight = lLeft + r.width * (s[0]/100);
-                    var lBottom = lTop + r.height * (s[1]/100);
-
-                    if (!bounds) bounds = { left: lLeft, top: lTop, right: lRight, bottom: lBottom };
-                    else {
-                        bounds.left = Math.min(bounds.left, lLeft);
-                        bounds.top = Math.min(bounds.top, lTop);
-                        bounds.right = Math.max(bounds.right, lRight);
-                        bounds.bottom = Math.max(bounds.bottom, lBottom);
-                    }
-                }
-                if (bounds) {
-                    var w = bounds.right - bounds.left;
-                    var h = bounds.bottom - bounds.top;
-                    if (w > 0 && h > 0) {
-                        var rect = parentLayer.property("Contents").addProperty("ADBE Vector Shape - Rect");
-                        rect.name = "CAMPO DE GRUPO";
-                        rect.property("Size").setValue([w, h]);
-                        rect.property("Position").setValue([bounds.left + w/2, bounds.top + h/2]);
-                    }
-                }
-            }
-
-            function safeSetPathLoc(propParent, shapeObj) {
-                try { propParent.property("ADBE Vector Shape").setValue(shapeObj); return; } catch(e){}
-                try { propParent.property("Path").setValue(shapeObj); return; } catch(e){}
-                try { propParent.property("Caminho").setValue(shapeObj); return; } catch(e){}
-                try { propParent.property(2).setValue(shapeObj); return; } catch(e){}
-            }
-            function safeSetBlendModeLoc(propParent, modeStr) {
-                if(!modeStr) return;
-                var bm = modeStr.replace("BlendMode.", "").replace("BlendModes.", "");
-                var modeInt = 1;
-                if (bm === "MULTIPLY") modeInt = 2; else if (bm === "SCREEN") modeInt = 3; else if (bm === "OVERLAY") modeInt = 4;
-                else if (bm === "DARKEN") modeInt = 5; else if (bm === "LIGHTEN") modeInt = 6; else if (bm === "COLORDODGE") modeInt = 7;
-                else if (bm === "COLORBURN") modeInt = 8; else if (bm === "HARDLIGHT") modeInt = 9; else if (bm === "SOFTLIGHT") modeInt = 10;
-                else if (bm === "DIFFERENCE") modeInt = 11; else if (bm === "EXCLUSION") modeInt = 12; else if (bm === "HUE") modeInt = 13;
-                else if (bm === "SATURATION") modeInt = 14; else if (bm === "COLORBLEND") modeInt = 15; else if (bm === "LUMINOSITY") modeInt = 16;
-                if (modeInt !== 1) {
-                    try { propParent.property("ADBE Vector Blend Mode").setValue(modeInt); } catch(e){}
-                    try { propParent.property("Blend Mode").setValue(modeInt); } catch(e){}
-                    try { propParent.property("Modo de mesclagem").setValue(modeInt); } catch(e){}
-                }
-            }
-
             function processNodeTree(node, parentGroupContents) {
                 if (node.type === "group" || node.type === "merged_group") {
                     var newGroup = parentGroupContents.addProperty("ADBE Vector Group");
@@ -241,7 +317,6 @@ function receiveFromOverlordLite(uriEncodedPayload) {
                     
                     var transform = newGroup.property("ADBE Vector Transform Group");
                     if (node.opacity !== undefined && node.opacity < 100) safeSetOpacityLoc(transform, node.opacity);
-                    if (node.blendMode) safeSetBlendModeLoc(newGroup, node.blendMode);
                 } else if (node.type === "shape") {
                     var newGroup = parentGroupContents.addProperty("ADBE Vector Group");
                     if (node.name) newGroup.name = node.name;
@@ -259,7 +334,7 @@ function receiveFromOverlordLite(uriEncodedPayload) {
                             outTan.push([p.pts[k].o[0], p.pts[k].o[1]]);
                         }
                         shapeObj.vertices = verts; shapeObj.inTangents = inTan; shapeObj.outTangents = outTan; shapeObj.closed = p.closed;
-                        safeSetPathLoc(pathShp, shapeObj);
+                        try { pathShp.property("ADBE Vector Shape").setValue(shapeObj); } catch(e){}
                     }
 
                     if (node.stroke) {
@@ -267,10 +342,6 @@ function receiveFromOverlordLite(uriEncodedPayload) {
                         safeSetColorLoc(stroke, node.stroke.color);
                         var w = node.stroke.width !== undefined ? node.stroke.width : 1;
                         safeSetWidthLoc(stroke, w);
-                        try { stroke.property("ADBE Vector Stroke Width").expression = "try{ value / (thisLayer.transform.scale[0] / 100); }catch(e){ value; }"; } catch(e){}
-                        try { stroke.property("Stroke Width").expression = "try{ value / (thisLayer.transform.scale[0] / 100); }catch(e){ value; }"; } catch(e){}
-                        try { stroke.property("Largura do traçado").expression = "try{ value / (thisLayer.transform.scale[0] / 100); }catch(e){ value; }"; } catch(e){}
-                        try { stroke.property(4).expression = "try{ value / (thisLayer.transform.scale[0] / 100); }catch(e){ value; }"; } catch(e){}
                     }
                     if (node.fill) {
                         var fill = childContents.addProperty("ADBE Vector Graphic - Fill");
@@ -280,7 +351,6 @@ function receiveFromOverlordLite(uriEncodedPayload) {
                         var transform = newGroup.property("ADBE Vector Transform Group");
                         safeSetOpacityLoc(transform, node.opacity);
                     }
-                    if (node.blendMode) safeSetBlendModeLoc(newGroup, node.blendMode);
                 }
             }
 
@@ -346,26 +416,37 @@ function receiveFromOverlordLite(uriEncodedPayload) {
                     subNull.property("Position").setValue([0,0]);
                     subNull.moveAfter(parentNull);
 
-                    // ⭐ NOVO: Herda Opacidade de Group, Fill ou Stroke
+                    // ⭐ NOVO: Herda Opacidade de Group, Fill ou Stroke (Incluindo Gradientes!)
                     try {
-                        var transformGrp = prop.property("ADBE Vector Transform Group") || prop.property("Transform");
-                        var op = transformGrp.property("ADBE Vector Group Opacity") || transformGrp.property("Opacity");
+                        var transformGrp = prop.property("ADBE Vector Transform Group") || prop.property("Transform") || prop.property("Transformar");
+                        var op = transformGrp.property("ADBE Vector Group Opacity") || transformGrp.property("Opacity") || transformGrp.property("Opacidade");
                         var appliedOp = false;
 
                         if (op && op.value < 100) {
-                            subNull.property("Opacity").setValue(op.value);
+                            var targetOp = subNull.property("ADBE Transform Group").property("ADBE Opacity") || subNull.property("Opacity") || subNull.property("Opacidade");
+                            targetOp.setValue(op.value);
                             op.setValue(100); 
                             appliedOp = true;
                         }
 
-                        // Proteção extra: Verifica se há um Fill ou Stroke com opacidade única nesse nível
-                        var contents = prop.property("Contents");
+                        // Proteção extra: Verifica Fill, Stroke E TAMBÉM G-Fill/G-Stroke (Gradientes)
+                        var contents = prop.property("Contents") || prop.property("Conteúdo");
                         for (var i = 1; i <= contents.numProperties; i++) {
                             var p = contents.property(i);
-                            if (p.matchName === "ADBE Vector Graphic - Fill" || p.matchName === "ADBE Vector Graphic - Stroke") {
-                                var fOp = p.property("ADBE Vector Fill Opacity") || p.property("ADBE Vector Stroke Opacity");
+                            var isGraphic = (p.matchName === "ADBE Vector Graphic - Fill" || 
+                                            p.matchName === "ADBE Vector Graphic - Stroke" ||
+                                            p.matchName === "ADBE Vector Graphic - G-Fill" ||
+                                            p.matchName === "ADBE Vector Graphic - G-Stroke");
+
+                            if (isGraphic) {
+                                var fOp = p.property("ADBE Vector Fill Opacity") || 
+                                          p.property("ADBE Vector Stroke Opacity") || 
+                                          p.property("Opacity") || 
+                                          p.property("Opacidade");
+                                          
                                 if (fOp && fOp.value < 100 && !appliedOp) {
-                                    subNull.property("Opacity").setValue(fOp.value);
+                                    var targetOp = subNull.property("ADBE Transform Group").property("ADBE Opacity") || subNull.property("Opacity") || subNull.property("Opacidade");
+                                    targetOp.setValue(fOp.value);
                                     fOp.setValue(100);
                                     appliedOp = true;
                                 }

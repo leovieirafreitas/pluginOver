@@ -32,13 +32,51 @@
             if (col.typename === "NoColor") return null;
             if (col.typename === "RGBColor") return [col.red/255, col.green/255, col.blue/255];
             if (col.typename === "CMYKColor") {
-                var r = (1 - col.cyan/100) * (1 - col.black/100);
-                var g = (1 - col.magenta/100) * (1 - col.black/100);
-                var b = (1 - col.yellow/100) * (1 - col.black/100);
+                var cyan = col.cyan / 100;
+                var magenta = col.magenta / 100;
+                var yellow = col.yellow / 100;
+                var black = col.black / 100;
+                var r = (1 - cyan) * (1 - black);
+                var g = (1 - magenta) * (1 - black);
+                var b = (1 - yellow) * (1 - black);
                 return [r, g, b];
             }
             if (col.typename === "GrayColor") { var g = 1 - (col.gray/100); return [g, g, g]; }
             if (col.typename === "SpotColor") return safeGetColor(col.spot.color);
+        } catch(e){}
+        return null;
+    }
+
+    function safeGetFill(col, item) {
+        if (!col) return null;
+        try {
+            if (col.typename === "NoColor") return null;
+            if (col.typename === "GradientColor") {
+                var g = col.gradient;
+                var res = { 
+                    type: "gradient", 
+                    stops: [],
+                    gType: (g.type === GradientType.LINEAR ? 1 : 2),
+                    absOrigin: [col.origin[0], col.origin[1]],
+                    angle: col.angle,
+                    length: col.length
+                };
+                for (var i = 0; i < g.gradientStops.length; i++) {
+                    var s = g.gradientStops[i];
+                    var sc = safeGetColor(s.color);
+                    if (sc === null) sc = [0,0,0];
+                    res.stops.push({
+                        offset: s.rampPoint / 100,
+                        color: sc,
+                        opacity: s.opacity / 100,
+                        midPoint: s.midPoint / 100
+                    });
+                }
+                return res;
+            }
+            var solidC = safeGetColor(col);
+            if (solidC === null) return null;
+            return { type: "solid", color: solidC };
         } catch(e){}
         return null;
     }
@@ -63,7 +101,9 @@
     }
 
     function buildTree(item) {
-        if (item.hidden || (item.typename === "PathItem" && item.clipping)) return null;
+        if (item.hidden) return null;
+        // Se for uma path de recorte puramente invisível, marcamos ela
+        var isClippingPath = (item.typename === "PathItem" && item.clipping);
         
         if (item.typename === "TextFrame") {
             try {
@@ -88,9 +128,14 @@
             var groupData = { type: "group", name: item.name || "Grupo", items: [] };
             if (item.opacity !== undefined) groupData.opacity = item.opacity;
             if (item.blendingMode) groupData.blendMode = item.blendingMode.toString();
+            if (item.clipped) groupData.isClipped = true;
+
             for (var i = 0; i < item.pageItems.length; i++) {
                 var childData = buildTree(item.pageItems[i]);
-                if (childData) groupData.items.push(childData);
+                if (childData) {
+                    if (item.clipped && i === 0) childData.isMask = true; // O primeiro item do grupo é o recorte
+                    groupData.items.push(childData);
+                }
             }
             if (groupData.items.length > 0) return groupData;
             return null;
@@ -128,11 +173,25 @@
             if (item.opacity !== undefined) shapeData.opacity = item.opacity;
             if (item.blendingMode) shapeData.blendMode = item.blendingMode.toString();
             
-            var fillCol = safeGetColor(fillColObj);
-            var strokeCol = safeGetColor(strokeColObj);
-            
-            if (hasFill && fillCol !== null) shapeData.fill = { color: fillCol };
-            if (hasStroke && strokeCol !== null) shapeData.stroke = { color: strokeCol, width: strokeWidth }; 
+            // Marcar se é uma máscara de recorte real
+            if (isClippingPath || item.isMask === true) shapeData.isMask = true;
+
+            // Só exportamos cores se NÃO for uma máscara puramente de recorte
+            if (!isClippingPath) {
+                if (hasFill) {
+                    shapeData.fill = safeGetFill(fillColObj, item);
+                    if (shapeData.fill && shapeData.fill.type === "gradient") {
+                        shapeData.fill.cx = cx; shapeData.fill.cy = cy;
+                    }
+                }
+                if (hasStroke) {
+                    shapeData.stroke = safeGetFill(strokeColObj, item);
+                    if (shapeData.stroke && shapeData.stroke.type === "gradient") {
+                        shapeData.stroke.cx = cx; shapeData.stroke.cy = cy;
+                    }
+                    shapeData.strokeWidth = strokeWidth;
+                }
+            }
             return shapeData;
         }
     }
